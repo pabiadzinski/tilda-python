@@ -7,9 +7,9 @@ import os
 
 API_HOST = 'http://api.tildacdn.info/v1/'
 
-PUBLIC_KEY = "csl9twkx5ia30bgc1crp"
-PRIVATE_KEY = "wii3j70m1qkej6oc2897"
-PROJECT_ID = '701553'
+PUBLIC_KEY = ""
+PRIVATE_KEY = ""
+PROJECT_ID = ''
 
 
 METHODS = (
