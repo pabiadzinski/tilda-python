@@ -5,3 +5,5 @@ css
 images
 js
 .htaccess
+tilda_*
+.DS_Store

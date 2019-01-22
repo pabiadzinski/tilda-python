@@ -1,104 +1,48 @@
 #!/usr/bin/python
 
-import requests
-import urllib.parse
-import json
 import os
+import requests
+import argparse
 from dotenv import load_dotenv
+import time
+
+from tildaapi import Client
 
 load_dotenv()
 
-API_HOST = 'http://api.tildacdn.info/v1/'
-
 PUBLIC_KEY = os.getenv("TILDA_PUBLIC_KEY")
-PRIVATE_KEY = os.getenv("TILDA_PRIVATE_KEY")
+SECRET_KEY = os.getenv("TILDA_SECRET_KEY")
 PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
-
-METHODS = {
-    'GET_PAGE_FULL_EXPORT': 'getpagefullexport',
-    'GET_PROJECT_EXPORT': 'getprojectexport',
-    'GET_PAGES_LIST': 'getpageslist',
-}
+DEFAULT_SYMLINK = os.path.abspath('../tildastatic')
+DATETIME = time.strftime('%Y%m%d-%H%M%S')
+DESTINATION_FOLDER = os.path.abspath('tilda_' + DATETIME + '/') + '/'
 
 FOLDERS = {
-    'js': './js/',
-    'css': './css/',
-    'images': './images/'
+    'js': DESTINATION_FOLDER + 'js/',
+    'css': DESTINATION_FOLDER + 'css/',
+    'images': DESTINATION_FOLDER + 'images/',
 }
 
 
-def prepare_dirs():
-    for key, path in FOLDERS.items():
+def create_root_folder(folder):
+    if os.path.exists(folder):
+        pass
+    else:
+        os.mkdir(folder)
+
+
+def prepare_dirs(folders):
+    for key, path in folders.items():
         if os.path.exists(path):
             pass
         else:
             os.mkdir(path)
 
 
-def check_response_status(data):
-    if data['status'] == 'FOUND':
-        return True
-
-    return False
-
-
-def get_api_url(method):
-    params = {
-        'publickey': PUBLIC_KEY,
-        'secretkey': PRIVATE_KEY,
-        'projectid': PROJECT_ID
-    }
-
-    return API_HOST + method + "/?" + urllib.parse.urlencode(params)
-
-
-def get_page_url(page):
-    params = {
-        'publickey': PUBLIC_KEY,
-        'secretkey': PRIVATE_KEY,
-        'pageid': page
-    }
-
-    return API_HOST + METHODS['GET_PAGE_FULL_EXPORT'] + "/?" + urllib.parse.urlencode(params)
-
-
-def get_project_export():
-    data = do_request(METHODS['GET_PROJECT_EXPORT'])
-
-    return data
-
-
-def save_static_files(data):
-    for row in data['result']['css']:
-        print('Downloaded css: ', row['from'])
-        download_file(row['from'], FOLDERS['css'] + row['to'])
-
-    for row in data['result']['js']:
-        print('Downloaded js: ', row['from'])
-        download_file(row['from'], FOLDERS['js'] + row['to'])
-
-    for row in data['result']['images']:
-        print('Downloaded image: ', row['from'])
-        download_file(row['from'], FOLDERS['images'] + row['to'])
-
-    save_file(data['result']['htaccess'], '.htaccess')
-    print('Downloaded htaccess')
-
-
-def get_pages_list():
-    return do_request(METHODS['GET_PAGES_LIST'])
-
-
-def get_page_full_export(id):
-    page = get_page(id)
-
-    if check_response_status(page):
-        save_file(page['result']['html'], page['result']['filename'])
-    else:
-        print(page['message'])
-
-    return page
+def save_file(content, filename):
+    with open(filename, 'w') as handler:
+        handler.write(content)
 
 
 def download_file(path, filename):
@@ -107,48 +51,68 @@ def download_file(path, filename):
         handler.write(data)
 
 
-def do_request(method):
-    url = get_api_url(method)
-    response = requests.get(url)
+def save_assets(data, folders):
+    for row in data['css']:
+        download_file(row['from'], folders['css'] + row['to'])
+        log('Downloaded css: ', row['from'])
 
-    return json.loads(response.content)
+    for row in data['js']:
+        download_file(row['from'], folders['js'] + row['to'])
+        log('Downloaded js: ', row['from'])
 
+    for row in data['images']:
+        download_file(row['from'], folders['images'] + row['to'])
+        log('Downloaded image: ', row['from'])
 
-def get_page(page):
-    url = get_page_url(page)
-    response = requests.get(url)
-
-    return json.loads(response.content)
-
-
-def save_file(content, filename):
-    with open('./' + filename, 'w') as handler:
-        handler.write(content)
+    save_file(data['htaccess'], '.htaccess')
 
 
-def main():
-    prepare_dirs()
+def log(text, value=None):
+    print(text, value)
 
-    project = get_project_export()
 
-    if check_response_status(project):
-        save_static_files(project)
+def create_symlink(src_path):
+    if os.path.islink(src_path):
+        os.remove(src_path)
 
-        pages = get_pages_list()
+    os.symlink(DESTINATION_FOLDER, src_path)
 
-        if check_response_status(pages):
-            for page in pages['result']:
-                page_info = get_page_full_export(page['id'])
 
-                for row in page_info['result']['images']:
-                    print('Downloaded page image: ', row['from'])
-                    download_file(row['from'], FOLDERS['images'] + row['to'])
-        else:
-            print(pages['message'])
+def export():
+    client = Client(SECRET_KEY, PUBLIC_KEY)
 
-    else:
-        print(project['message'])
+    prepare_dirs(FOLDERS)
+
+    project_data = client.get_project_export(PROJECT_ID)
+
+    save_assets(project_data, FOLDERS)
+
+    pages_data = client.get_pages_list(PROJECT_ID)
+
+    for page in pages_data:
+        page_info = client.get_page_full_export(page['id'])
+        save_file(page_info['html'], DESTINATION_FOLDER + page_info['filename'])
+
+        for image in page_info['images']:
+            download_file(image['from'], FOLDERS['images'] + image['to'])
+            log('Downloaded image: ', image['from'])
 
 
 if __name__ == '__main__':
-    main()
+    create_root_folder(DESTINATION_FOLDER)
+
+    export()
+
+    log("EXPORT DONE")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--symlink_path', '-sp', default=DEFAULT_SYMLINK, help='destination folder (default: ' + DEFAULT_SYMLINK + ')'
+    )
+
+    args = parser.parse_args()
+    symlink_path = args.symlink_path
+
+    create_symlink(symlink_path)
+
+    log("SYMLINK CREATED")
