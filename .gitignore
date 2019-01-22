@@ -1,0 +1,7 @@
+.idea
+.env
+page*
+css
+images
+js
+.htaccess
