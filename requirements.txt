@@ -4,4 +4,4 @@ idna==2.8
 python-dotenv==0.10.1
 requests==2.21.0
 tildaapi==0.1
-urllib3==1.24.2
+urllib3==1.26.5
